@@ -7,7 +7,7 @@
         :key="produit.id"
         class="product-card"
       >
-        <img :src="`/images/${produit.image}`" :alt="produit.nom" class="product-img" />
+        <img :src="`${apiBaseUrl}/imageEcom/${produit.image}`" :alt="produit.nom" class="product-img" @error="handleImgError" />
         <div class="product-body">
           <h3 class="product-name">{{ produit.nom }}</h3>
           <p class="product-price">{{ produit.prix.toLocaleString() }} FCFA</p>
@@ -39,7 +39,22 @@ export default {
       required: true,
     },
   },
+  data() {
+    return {
+      apiBaseUrl: import.meta.env.VITE_API_URL || 'http://localhost:3000',
+    }
+  },
   emits: ['add-to-cart'],
+ methods: {
+  handleImgError(e) {
+    e.target.onerror = null // empêche de redéclencher @error indéfiniment
+    e.target.src = `${this.apiBaseUrl}/imageEcom/placeholder.jpg`
+  }
+},
+  mounted() {
+  console.log('apiBaseUrl:', this.apiBaseUrl)
+  console.log('produits:', this.produits)
+}
 }
 </script>
 

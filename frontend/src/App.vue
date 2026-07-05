@@ -3,10 +3,23 @@ import { ref, computed, onMounted } from 'vue'
 import api from './services/api'
 import Cart from './components/Cart.vue'
 import ProductList from './components/ProductList.vue'
+import AdminProduits from './components/AdminProduits.vue'
+import Login from './components/Login.vue'
 
 const produits = ref([])
 const recherche = ref('')
 const cartItems = ref([])
+const vueAdmin = ref(false)
+const estConnecte = ref(!!localStorage.getItem('adminToken'))
+const commandeEnCours = ref(false)
+const messageCommande = ref('')
+const erreurCommande = ref('')
+
+const seDeconnecter = () => {
+  localStorage.removeItem('adminToken')
+  estConnecte.value = false
+  vueAdmin.value = false
+}
 
 // computed → filtre les produits selon la recherche
 const produitsFiltres = computed(() => {
@@ -56,52 +69,116 @@ const diminuerQty = (id) => {
 const supprimerItem = (id) => {
   cartItems.value = cartItems.value.filter(item => item.id !== id)
 }
+
+const validerCommande = async () => {
+  if (cartItems.value.length === 0) return
+
+  commandeEnCours.value = true
+  erreurCommande.value = ''
+  messageCommande.value = ''
+
+  const items = cartItems.value.map(item => ({ id: item.id, qty: item.qty }))
+
+  try {
+    const res = await api.post('/commandes', { items })
+    messageCommande.value = `Commande validée ! Numéro : ${res.data.numero}`
+    cartItems.value = []
+    await chargerProduits() // recharge le catalogue avec les stocks à jour
+  } catch (err) {
+    erreurCommande.value = err.response?.data?.message || 'Erreur lors de la validation de la commande'
+  } finally {
+    commandeEnCours.value = false
+  }
+}
+
 </script>
 
 <template>
+<aside class="cart-section">
+  <Cart
+    :cartItems="cartItems"
+    @increase-qty="augmenterQty"
+    @decrease-qty="diminuerQty"
+    @remove-item="supprimerItem"
+  >
+    <template #empty>
+      <p class="cart-empty">Votre panier est vide 🛒</p>
+    </template>
+  </Cart>
+
+  <button
+    v-if="cartItems.length > 0"
+    class="btn-valider-commande"
+    :disabled="commandeEnCours"
+    @click="validerCommande"
+  >
+    {{ commandeEnCours ? 'Traitement...' : 'Valider la commande' }}
+  </button>
+
+  <p v-if="messageCommande" class="commande-succes">{{ messageCommande }}</p>
+  <p v-if="erreurCommande" class="commande-erreur">{{ erreurCommande }}</p>
+</aside>
+  
   <div class="app">
 
     <!-- Header -->
     <header class="header">
       <h1>🛒 Ma Boutique</h1>
       <span v-if="totalItems > 0" class="header-badge">{{ totalItems }}</span>
+      <button class="btn-toggle-admin" @click="vueAdmin = !vueAdmin">
+        {{ vueAdmin ? '← Retour boutique' : '⚙️ Admin' }}
+      </button>
     </header>
 
-    <!-- Barre de recherche -->
-    <input
-      v-model="recherche"
-      class="search-input"
-      placeholder="Rechercher un produit..."
-    />
+    <!-- Vue Admin -->
+    <AdminProduits v-if="vueAdmin && estConnecte" @produit-modifie="chargerProduits" />
+    <Login v-else-if="vueAdmin && !estConnecte" @connecte="estConnecte = true" />
 
-    <div class="layout">
+    <!-- Deconnection -->
 
-      <!-- Colonne gauche : composant ProductList -->
-      <main class="produits-section">
-        <ProductList
-          :produits="produitsFiltres"
-          @add-to-cart="ajouterAuPanier"
-        />
-        <p v-if="produitsFiltres.length === 0" class="empty-msg">
-          Aucun produit trouvé
-        </p>
-      </main>
+    <button v-if="vueAdmin && estConnecte" class="btn-toggle-admin" @click="seDeconnecter">
+  🚪 Déconnexion
+    </button>
 
-      <!-- Colonne droite : composant Cart -->
-      <aside class="cart-section">
-        <Cart
-          :cartItems="cartItems"
-          @increase-qty="augmenterQty"
-          @decrease-qty="diminuerQty"
-          @remove-item="supprimerItem"
-        >
-          <template #empty>
-            <p class="cart-empty">Votre panier est vide 🛒</p>
-          </template>
-        </Cart>
-      </aside>
+    <!-- Vue Boutique -->
+    <template v-else>
+      <!-- Barre de recherche -->
+      <input
+        v-model="recherche"
+        class="search-input"
+        placeholder="Rechercher un produit..."
+      />
 
-    </div>
+      <div class="layout">
+
+        <!-- Colonne gauche : composant ProductList -->
+        <main class="produits-section">
+          <ProductList
+            :produits="produitsFiltres"
+            @add-to-cart="ajouterAuPanier"
+          />
+          <p v-if="produitsFiltres.length === 0" class="empty-msg">
+            Aucun produit trouvé
+          </p>
+        </main>
+
+        <!-- Colonne droite : composant Cart -->
+        <aside class="cart-section">
+          <Cart
+            :cartItems="cartItems"
+            @increase-qty="augmenterQty"
+            @decrease-qty="diminuerQty"
+            @remove-item="supprimerItem"
+          >
+            <template #empty>
+              <p class="cart-empty">Votre panier est vide 🛒</p>
+            </template>
+          </Cart>
+        </aside>
+
+      </div>
+    </template>
+
   </div>
 </template>
 
@@ -128,6 +205,19 @@ const supprimerItem = (id) => {
   font-size: 0.85rem;
   font-weight: 700;
 }
+
+.btn-toggle-admin {
+  margin-left: auto;
+  background: #1a1a2e;
+  color: #fff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.btn-toggle-admin:hover { background: #2d2d4a; }
 
 .search-input {
   width: 100%;
@@ -158,4 +248,33 @@ const supprimerItem = (id) => {
   padding: 2rem 0;
   font-size: 0.88rem;
 }
+.btn-valider-commande {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  background: #16a34a;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-valider-commande:hover:not(:disabled) { background: #15803d; }
+.btn-valider-commande:disabled { background: #d1d5db; cursor: not-allowed; }
+
+.commande-succes {
+  margin-top: 10px;
+  color: #16a34a;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-align: center;
+}
+.commande-erreur {
+  margin-top: 10px;
+  color: #dc2626;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
 </style>
